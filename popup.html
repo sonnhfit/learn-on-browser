@@ -91,6 +91,15 @@
       font-size: 13px;
       color: #084298;
     }
+    .example-box {
+      background-color: #fff3cd;
+      border: 1px solid #ffecb5;
+      border-radius: 4px;
+      padding: 10px;
+      margin-top: 5px;
+      font-size: 12px;
+      color: #664d03;
+    }
   </style>
 </head>
 <body>
@@ -127,8 +136,24 @@
     </div>
     <div>
       <label for="blacklist">Website Blacklist:</label>
-      <textarea id="blacklist" placeholder="Enter one domain per line, example:&#10;facebook.com&#10;youtube.com"></textarea>
-      <div class="help-text">Note: Chỉ cần nhập tên miền, không cần http:// hoặc www.</div>
+      <textarea id="blacklist" placeholder="Enter one domain per line, example:&#10;example.com&#10;*.example.com"></textarea>
+      <div class="help-text">Cách cấu hình blacklist:</div>
+      <div class="example-box">
+        <strong>1. Chặn domain và tất cả subdomain:</strong>
+        <br>
+        Nhập: example.com
+        <br>
+        Sẽ chặn: example.com, abc.example.com, xyz.example.com
+        <br><br>
+        <strong>2. Chỉ định rõ việc chặn subdomain:</strong>
+        <br>
+        Nhập: *.example.com
+        <br>
+        Sẽ chặn: example.com và tất cả subdomain
+        <br><br>
+        <strong>Lưu ý:</strong> Không cần nhập http:// hoặc www.
+        Nếu bạn có yêu cầu cải thiện hoặc báo cáo lỗi hãy DM cho mình nhé <a href="https://www.facebook.com/nhsonit" target="_blank">Link này</a>
+      </div>
     </div>
     <button id="saveButton">Save</button>
   </div>
