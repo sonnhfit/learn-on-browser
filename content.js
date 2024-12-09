@@ -5,7 +5,7 @@ let isProcessing = false;
 let blacklist = [];
 let hasProcessedPage = false;
 let isEnglishPage = false;
-let pageLanguageSetting = 'both'; // Thêm biến mới để lưu cài đặt ngôn ngữ
+let pageLanguageSetting = 'both';
 
 // Font style cho tiếng Việt
 const fontStyle = document.createElement('style');
@@ -58,6 +58,8 @@ tooltipStyle.textContent = `
 
 // Cập nhật các biến config
 function updateConfig(newConfig) {
+    const oldPageLanguage = pageLanguageSetting;
+    
     if (newConfig.isEnabled !== undefined) {
         isEnabled = newConfig.isEnabled;
     }
@@ -66,6 +68,18 @@ function updateConfig(newConfig) {
     }
     if (newConfig.pageLanguage !== undefined) {
         pageLanguageSetting = newConfig.pageLanguage;
+    }
+
+    // Reset trạng thái và xử lý lại trang nếu cài đặt ngôn ngữ thay đổi
+    if (oldPageLanguage !== pageLanguageSetting) {
+        removeAllReplacements();
+        hasProcessedPage = false;
+        isProcessing = false;
+        
+        // Kiểm tra và xử lý lại trang nếu cần
+        if (isEnabled && !isBlacklisted() && shouldProcessPage()) {
+            processPage();
+        }
     }
 }
 
@@ -103,6 +117,8 @@ function detectPageLanguage() {
 // Kiểm tra xem có nên xử lý trang dựa trên cài đặt ngôn ngữ
 function shouldProcessPage() {
     const currentPageLanguage = detectPageLanguage();
+    console.log('Current page language:', currentPageLanguage);
+    console.log('Page language setting:', pageLanguageSetting);
     
     switch (pageLanguageSetting) {
         case 'english':
@@ -112,7 +128,7 @@ function shouldProcessPage() {
         case 'both':
             return true;
         default:
-            return true;
+            return false; // Mặc định không xử lý nếu cài đặt không hợp lệ
     }
 }
 
@@ -218,7 +234,7 @@ function getAllContent() {
 
 // DOM Functions
 function applyReplacements(element, replacements) {
-    if (!isEnabled) return;
+    if (!isEnabled || !shouldProcessPage()) return;
 
     try {
         const tempContainer = document.createElement('div');
@@ -311,7 +327,7 @@ function createRefreshButton() {
 
 // API Functions
 async function processWithOpenAI(contents) {
-    if (!isEnabled || contents.length === 0) return null;
+    if (!isEnabled || contents.length === 0 || !shouldProcessPage()) return null;
 
     try {
         if (!chrome.runtime?.id) {
@@ -467,6 +483,8 @@ async function initializeExtension() {
                 console.error('Error loading settings:', chrome.runtime.lastError);
                 return;
             }
+            
+            // Cập nhật cấu hình
             updateConfig({
                 isEnabled: result.isEnabled !== undefined ? result.isEnabled : true,
                 blacklist: result.blacklist ? result.blacklist.split('\n')
@@ -474,6 +492,11 @@ async function initializeExtension() {
                     .filter(domain => domain) : [],
                 pageLanguage: result.pageLanguage || 'both'
             });
+            
+            // Kiểm tra và xử lý trang nếu cần
+            if (isEnabled && !isBlacklisted() && !hasProcessedPage && shouldProcessPage()) {
+                processPage();
+            }
         });
     } catch (error) {
         console.error('Error initializing extension:', error);
@@ -481,7 +504,7 @@ async function initializeExtension() {
 }
 
 async function processPage() {
-    if (!isEnabled || isProcessing || hasProcessedPage) return;
+    if (!isEnabled || isProcessing || hasProcessedPage || !shouldProcessPage()) return;
     
     try {
         if (!chrome.runtime?.id) {
@@ -496,6 +519,7 @@ async function processPage() {
         // Kiểm tra cài đặt ngôn ngữ
         if (!shouldProcessPage()) {
             console.log('Trang web này không phù hợp với cài đặt ngôn ngữ');
+            createToast('Trang web này không phù hợp với cài đặt ngôn ngữ đã chọn', 'info');
             return;
         }
         
@@ -554,9 +578,11 @@ async function initialize() {
                 if (!chrome.runtime?.id) {
                     throw new Error('Extension context không khả dụng');
                 }
-                if (isEnabled && !isProcessing && !isBlacklisted()) {
+                if (isEnabled && !isProcessing && !isBlacklisted() && shouldProcessPage()) {
                     setHasProcessedPage(false);
                     await processPage();
+                } else if (!shouldProcessPage()) {
+                    createToast('Trang web này không phù hợp với cài đặt ngôn ngữ đã chọn', 'info');
                 }
             } catch (error) {
                 console.error('Button Click Error:', error);
@@ -578,14 +604,25 @@ async function initialize() {
                 }
 
                 if (message.type === 'settingsUpdated') {
+                    // Xóa tất cả replacements hiện tại
+                    removeAllReplacements();
+                    
+                    // Cập nhật cấu hình mới
                     updateConfig({
                         isEnabled: message.isEnabled,
                         blacklist: message.blacklist,
                         pageLanguage: message.pageLanguage
                     });
-                    if (!isEnabled) {
-                        removeAllReplacements();
+                    
+                    // Reset các trạng thái
+                    hasProcessedPage = false;
+                    isProcessing = false;
+                    
+                    // Kiểm tra và xử lý lại trang nếu cần
+                    if (isEnabled && !isBlacklisted() && shouldProcessPage()) {
+                        processPage();
                     }
+                    
                     sendResponse({success: true});
                 }
             } catch (error) {
