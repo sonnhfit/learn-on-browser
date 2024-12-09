@@ -2,15 +2,15 @@ import {
     isEnabled, isProcessing, hasProcessedPage, setIsProcessing, 
     setHasProcessedPage, setIsEnglishPage, updateConfig,
     fontStyle, tooltipStyle 
-} from './config.js';
+} from '/src/modules/config.js';
 
 import { 
     detectPageLanguage, isBlacklisted, createToast, 
     waitForFullLoad, getAllContent 
-} from './utils.js';
+} from '/src/modules/utils.js';
 
-import { processWithOpenAI } from './api.js';
-import { applyReplacements, removeAllReplacements, createRefreshButton } from './dom.js';
+import { processWithOpenAI } from '/src/modules/api.js';
+import { applyReplacements, removeAllReplacements, createRefreshButton } from '/src/modules/dom.js';
 
 // Khởi tạo extension
 async function initializeExtension() {

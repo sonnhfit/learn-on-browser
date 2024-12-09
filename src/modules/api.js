@@ -1,5 +1,5 @@
-import { isEnabled, isEnglishPage } from './config.js';
-import { createToast } from './utils.js';
+import { isEnabled, isEnglishPage } from '/src/modules/config.js';
+import { createToast } from '/src/modules/utils.js';
 
 // Làm sạch response từ API
 function cleanAPIResponse(response) {

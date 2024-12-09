@@ -1,5 +1,5 @@
-import { isEnabled, isEnglishPage, replacedWords } from './config.js';
-import { sanitizeHTML } from './utils.js';
+import { isEnabled, isEnglishPage, replacedWords } from '/src/modules/config.js';
+import { sanitizeHTML, createToast } from '/src/modules/utils.js';
 
 // Thay thế text với từ tiếng Anh/Việt
 export function applyReplacements(element, replacements) {

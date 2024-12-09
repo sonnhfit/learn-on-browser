@@ -1,4 +1,4 @@
-import { blacklist } from './config.js';
+import { blacklist } from '/src/modules/config.js';
 
 // Hàm phát hiện ngôn ngữ của trang
 export function detectPageLanguage() {
