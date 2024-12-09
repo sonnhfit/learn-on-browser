@@ -3,7 +3,8 @@ let replacedWords = new Map();
 let isEnabled = true;
 let isProcessing = false;
 let blacklist = [];
-let hasProcessedPage = false; // Flag để kiểm tra đã xử lý page chưa
+let hasProcessedPage = false;
+let isEnglishPage = false; // Flag để xác định trang tiếng Anh
 
 // Thêm font Unicode cho tiếng Việt
 const fontStyle = document.createElement('style');
@@ -17,6 +18,27 @@ fontStyle.textContent = `
 }
 `;
 document.head.appendChild(fontStyle);
+
+// Hàm phát hiện ngôn ngữ của trang
+function detectPageLanguage() {
+    const htmlLang = document.documentElement.lang.toLowerCase();
+    const metaLang = document.querySelector('meta[http-equiv="content-language"]')?.content?.toLowerCase();
+    
+    // Kiểm tra ngôn ngữ từ thuộc tính html hoặc meta tag
+    if (htmlLang.includes('en') || metaLang?.includes('en')) {
+        return 'en';
+    }
+    if (htmlLang.includes('vi') || metaLang?.includes('vi')) {
+        return 'vi';
+    }
+
+    // Nếu không có thông tin rõ ràng, phân tích nội dung
+    const text = document.body.innerText.toLowerCase();
+    const englishWords = text.match(/\b(the|is|are|was|were|have|has|had|this|that|these|those)\b/gi) || [];
+    const vietnameseWords = text.match(/\b(của|và|trong|những|các|được|là|có|không|để)\b/gi) || [];
+
+    return englishWords.length > vietnameseWords.length ? 'en' : 'vi';
+}
 
 // Hàm encode/decode Unicode cho tiếng Việt
 function encodeVietnamese(str) {
@@ -241,6 +263,33 @@ async function processWithOpenAI(contents) {
 
         const combinedText = contents.map(item => item.text).join('\n---\n');
 
+        // Điều chỉnh prompt dựa trên ngôn ngữ của trang
+        const prompt = isEnglishPage ?
+            `Analyze the following English text and:
+            1. Identify important words/phrases to replace with Vietnamese (about ${response.replacementRate || 20}% of words)
+            2. Return JSON with format:
+            {
+                "replacements": [
+                    {
+                        "english": "english word",
+                        "vietnamese": "từ tiếng việt",
+                        "meaning": "english meaning"
+                    }
+                ]
+            }` :
+            `Hãy phân tích các đoạn văn bản tiếng Việt sau và thực hiện:
+            1. Xác định các từ/cụm từ quan trọng có thể thay thế bằng tiếng Anh (khoảng ${response.replacementRate || 20}% số từ)
+            2. Trả về JSON với format:
+            {
+                "replacements": [
+                    {
+                        "vietnamese": "từ tiếng việt",
+                        "english": "từ tiếng anh",
+                        "meaning": "nghĩa tiếng việt"
+                    }
+                ]
+            }`;
+
         const apiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -248,7 +297,7 @@ async function processWithOpenAI(contents) {
                 'Authorization': `Bearer ${response.apiKey}`
             },
             body: JSON.stringify({
-                model: response.model || 'gpt-4o-mini',
+                model: response.model || 'gpt-4-mini',
                 messages: [
                     {
                         role: "system",
@@ -256,21 +305,7 @@ async function processWithOpenAI(contents) {
                     },
                     {
                         role: "user",
-                        content: `
-                        Hãy phân tích các đoạn văn bản tiếng Việt sau và thực hiện:
-                        1. Xác định các từ/cụm từ quan trọng có thể thay thế bằng tiếng Anh (khoảng ${response.replacementRate || 20}% số từ)
-                        2. Trả về JSON với format:
-                        {
-                            "replacements": [
-                                {
-                                    "vietnamese": "từ tiếng việt",
-                                    "english": "từ tiếng anh",
-                                    "meaning": "nghĩa tiếng việt"
-                                }
-                            ]
-                        }
-                        
-                        Văn bản: ${combinedText}`
+                        content: `${prompt}\n\nText: ${combinedText}`
                     }
                 ]
             })
@@ -311,7 +346,7 @@ async function processWithOpenAI(contents) {
     }
 }
 
-// Hàm thay thế text với từ tiếng Anh
+// Hàm thay thế text với từ tiếng Anh/Việt
 function applyReplacements(element, replacements) {
     if (!isEnabled) return;
 
@@ -337,16 +372,20 @@ function applyReplacements(element, replacements) {
         // Thay thế text trong mỗi text node
         textNodes.forEach(textNode => {
             let content = textNode.textContent;
-            replacements.forEach(({ vietnamese, english, meaning }) => {
+            replacements.forEach(replacement => {
                 try {
-                    replacedWords.set(english, meaning);
-                    const safeEnglish = sanitizeHTML(english);
+                    const sourceWord = isEnglishPage ? replacement.english : replacement.vietnamese;
+                    const targetWord = isEnglishPage ? replacement.vietnamese : replacement.english;
+                    const meaning = isEnglishPage ? replacement.english : replacement.meaning;
+                    
+                    replacedWords.set(targetWord, meaning);
+                    const safeTargetWord = sanitizeHTML(targetWord);
                     const safeMeaning = sanitizeHTML(meaning);
                     
                     // Tạo regex an toàn hơn để tránh match HTML tags và bảo toàn Unicode
-                    const escapedVietnamese = vietnamese.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const regex = new RegExp(`(?<!<[^>]*)${escapedVietnamese}(?![^<]*>)`, 'gi');
-                    content = content.replace(regex, `<span class="english-word" data-meaning="${safeMeaning}">${safeEnglish}</span>`);
+                    const escapedSourceWord = sourceWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`(?<!<[^>]*)${escapedSourceWord}(?![^<]*>)`, 'gi');
+                    content = content.replace(regex, `<span class="english-word" data-meaning="${safeMeaning}">${safeTargetWord}</span>`);
                 } catch (e) {
                     console.error('Replacement Error:', e);
                 }
@@ -376,7 +415,7 @@ function applyReplacements(element, replacements) {
 const style = document.createElement('style');
 style.textContent = `
 .english-word {
-    background-color: rgba(255, 0, 0, 0.2);
+    background-color: #f65b66;
     padding: 0 2px;
     border-radius: 3px;
     cursor: help;
@@ -412,7 +451,6 @@ document.head.appendChild(style);
 
 // Hàm chính để xử lý trang
 async function processPage() {
-    // Kiểm tra đã xử lý page chưa và có đang xử lý không
     if (!isEnabled || isProcessing || hasProcessedPage) return;
     
     try {
@@ -420,13 +458,15 @@ async function processPage() {
             throw new Error('Extension context không khả dụng');
         }
 
-        // Kiểm tra blacklist
         if (isBlacklisted()) {
             console.log('Trang web này nằm trong blacklist');
             return;
         }
         
         isProcessing = true;
+        
+        // Xác định ngôn ngữ của trang
+        isEnglishPage = detectPageLanguage() === 'en';
         const contents = getAllContent();
         
         if (contents.length === 0) {
@@ -439,14 +479,13 @@ async function processPage() {
             contents.forEach(({element}) => {
                 applyReplacements(element, result.replacements);
             });
-            hasProcessedPage = true; // Đánh dấu đã xử lý page
-            createToast('Đã xử lý thành công!', 'success');
+            hasProcessedPage = true;
+            createToast(`Đã xử lý thành công trang ${isEnglishPage ? 'tiếng Anh' : 'tiếng Việt'}!`, 'success');
         }
     } catch (error) {
         console.error('Process Page Error:', error);
         createToast('Lỗi xử lý trang: ' + error.message);
         if (error.message.includes('Extension context không khả dụng')) {
-            // Thử khởi động lại extension
             setTimeout(initializeExtension, 1000);
         }
     } finally {
@@ -491,11 +530,8 @@ async function initialize() {
     }
 }
 
-initialize();
-
 // Thêm nút để kích hoạt lại việc xử lý
 const button = document.createElement('button');
-button.textContent = 'Refresh English Words';
 button.style.cssText = `
     position: fixed;
     bottom: 20px;
@@ -511,6 +547,10 @@ button.style.cssText = `
     font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', 
                  'Helvetica Neue', Arial, sans-serif;
 `;
+
+function updateButtonText() {
+    button.textContent = `Refresh ${isEnglishPage ? 'Vietnamese' : 'English'} Words`;
+}
 
 // Chỉ hiển thị nút khi trang không nằm trong blacklist
 if (!isBlacklisted()) {
@@ -536,4 +576,10 @@ button.addEventListener('click', async () => {
         }
     }
 });
+
+// Cập nhật text của nút khi trang được load
+updateButtonText();
 document.body.appendChild(button);
+
+// Khởi động extension
+initialize();

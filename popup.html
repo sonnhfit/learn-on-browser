@@ -2,6 +2,7 @@
 <html>
 <head>
   <title>English Learning Assistant</title>
+  <meta charset="UTF-8">
   <style>
     body {
       width: 300px;
@@ -81,10 +82,27 @@
       color: #666;
       margin-top: 2px;
     }
+    .info-box {
+      background-color: #e7f3fe;
+      border: 1px solid #b6d4fe;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      color: #084298;
+    }
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="info-box">
+      Extension này hoạt động với:
+      <ul style="margin: 5px 0; padding-left: 20px;">
+        <li>Trang tiếng Việt: Thay thế từ Việt bằng từ Anh</li>
+        <li>Trang tiếng Anh: Thay thế từ Anh bằng từ Việt</li>
+      </ul>
+      Ngôn ngữ trang web được tự động phát hiện.
+    </div>
     <div style="display: flex; justify-content: space-between; align-items: center;">
       <label>Enable/Disable Extension:</label>
       <label class="switch">
@@ -105,11 +123,12 @@
     <div>
       <label for="replacementRate">Replacement Rate (%):</label>
       <input type="number" id="replacementRate" min="1" max="100" value="20">
+      <div class="help-text">Tỉ lệ từ sẽ được thay thế trên trang</div>
     </div>
     <div>
       <label for="blacklist">Website Blacklist:</label>
       <textarea id="blacklist" placeholder="Enter one domain per line, example:&#10;facebook.com&#10;youtube.com"></textarea>
-      <div class="help-text">Note: Only enter domain names, no need for http:// or www.</div>
+      <div class="help-text">Note: Chỉ cần nhập tên miền, không cần http:// hoặc www.</div>
     </div>
     <button id="saveButton">Save</button>
   </div>

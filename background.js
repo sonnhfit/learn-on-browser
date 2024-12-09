@@ -1,6 +1,6 @@
 // Khởi tạo extension
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('English Learning Assistant đã được cài đặt');
+  console.log('English Learning Assistant đã được cài đặt - Hỗ trợ cả trang tiếng Anh và tiếng Việt');
 });
 
 // Lắng nghe messages từ content script
@@ -15,6 +15,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         });
         return true;
       }
+
+      // Log thông tin về ngôn ngữ trang web
+      console.log(`Xử lý trang web: ${sender.tab?.url}`);
+      console.log(`Ngôn ngữ được phát hiện: ${request.language || 'chưa xác định'}`);
 
       // Xử lý message
       sendResponse({success: true});
@@ -36,5 +40,13 @@ chrome.runtime.onSuspend.addListener(() => {
 
 // Xử lý khi extension được khôi phục
 chrome.runtime.onStartup.addListener(() => {
-  console.log('Extension đã được khởi động lại');
+  console.log('Extension đã được khởi động lại - Sẵn sàng xử lý cả trang tiếng Anh và tiếng Việt');
+});
+
+// Xử lý khi tab được kích hoạt
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  chrome.tabs.get(activeInfo.tabId, (tab) => {
+    console.log(`Tab mới được kích hoạt: ${tab.url}`);
+    console.log('Extension sẽ tự động phát hiện ngôn ngữ của trang');
+  });
 });
