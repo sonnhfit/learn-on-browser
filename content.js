@@ -6,6 +6,9 @@ let blacklist = [];
 let hasProcessedPage = false;
 let isEnglishPage = false;
 let pageLanguageSetting = 'both';
+let currentApiProvider = '';  // Không đặt giá trị mặc định
+let currentApiKey = '';
+let currentModel = '';
 
 // Font style cho tiếng Việt
 const fontStyle = document.createElement('style');
@@ -59,6 +62,7 @@ tooltipStyle.textContent = `
 // Cập nhật các biến config
 function updateConfig(newConfig) {
     const oldPageLanguage = pageLanguageSetting;
+    const oldProvider = currentApiProvider;
     
     if (newConfig.isEnabled !== undefined) {
         isEnabled = newConfig.isEnabled;
@@ -69,9 +73,18 @@ function updateConfig(newConfig) {
     if (newConfig.pageLanguage !== undefined) {
         pageLanguageSetting = newConfig.pageLanguage;
     }
+    if (newConfig.apiProvider !== undefined) {
+        currentApiProvider = newConfig.apiProvider;
+    }
+    if (newConfig.apiKey !== undefined) {
+        currentApiKey = newConfig.apiKey;
+    }
+    if (newConfig.model !== undefined) {
+        currentModel = newConfig.model;
+    }
 
-    // Reset trạng thái và xử lý lại trang nếu cài đặt ngôn ngữ thay đổi
-    if (oldPageLanguage !== pageLanguageSetting) {
+    // Reset trạng thái và xử lý lại trang nếu cài đặt ngôn ngữ hoặc provider thay đổi
+    if (oldPageLanguage !== pageLanguageSetting || oldProvider !== currentApiProvider) {
         removeAllReplacements();
         hasProcessedPage = false;
         isProcessing = false;
@@ -299,32 +312,6 @@ function removeAllReplacements() {
     });
 }
 
-function createRefreshButton() {
-    const button = document.createElement('button');
-    button.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        z-index: 10000;
-        padding: 10px;
-        background: #4CAF50;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        display: none;
-        font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', 
-                     'Helvetica Neue', Arial, sans-serif;
-    `;
-
-    function updateButtonText() {
-        button.textContent = `Refresh ${isEnglishPage ? 'Vietnamese' : 'English'} Words`;
-    }
-
-    updateButtonText();
-    return { button, updateButtonText };
-}
-
 // API Functions
 async function processWithOpenAI(contents) {
     if (!isEnabled || contents.length === 0 || !shouldProcessPage()) return null;
@@ -334,13 +321,13 @@ async function processWithOpenAI(contents) {
             throw new Error('Extension context không khả dụng');
         }
 
-        const response = await chrome.storage.sync.get(['apiKey', 'model', 'replacementRate']);
+        const response = await chrome.storage.sync.get(['replacementRate']);
         if (chrome.runtime.lastError) {
             throw new Error('Lỗi khi lấy cài đặt: ' + chrome.runtime.lastError.message);
         }
 
-        if (!response.apiKey) {
-            createToast('API key không được cung cấp. Vui lòng nhập API key trong phần cài đặt.');
+        if (!currentApiKey) {
+            createToast('OpenAI API key không được cung cấp. Vui lòng nhập API key trong phần cài đặt.');
             return null;
         }
 
@@ -376,10 +363,10 @@ async function processWithOpenAI(contents) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${response.apiKey}`
+                'Authorization': `Bearer ${currentApiKey}`
             },
             body: JSON.stringify({
-                model: response.model || 'gpt-4-mini',
+                model: currentModel || 'gpt-4-mini',
                 messages: [
                     {
                         role: "system",
@@ -395,34 +382,139 @@ async function processWithOpenAI(contents) {
 
         if (!apiResponse.ok) {
             const errorData = await apiResponse.json();
-            createToast(`Lỗi API: ${errorData.error?.message || 'Unknown error'}`);
+            createToast(`Lỗi OpenAI API: ${errorData.error?.message || 'Unknown error'}`);
             return null;
         }
 
         const data = await apiResponse.json();
         
         if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-            createToast('API trả về dữ liệu không hợp lệ');
+            createToast('OpenAI API trả về dữ liệu không hợp lệ');
             return null;
         }
 
         try {
             const cleanedResponse = cleanAPIResponse(data.choices[0].message.content);
-            console.log('Original API Response:', data.choices[0].message.content);
-            console.log('Cleaned API Response:', cleanedResponse);
+            console.log('Original OpenAI API Response:', data.choices[0].message.content);
+            console.log('Cleaned OpenAI API Response:', cleanedResponse);
 
             const parsedData = JSON.parse(cleanedResponse);
             validateAPIResponse(parsedData);
             return parsedData;
         } catch (e) {
-            createToast(`Lỗi xử lý dữ liệu: ${e.message}`);
-            console.error('Original API Response:', data.choices[0].message.content);
+            createToast(`Lỗi xử lý dữ liệu OpenAI: ${e.message}`);
+            console.error('Original OpenAI API Response:', data.choices[0].message.content);
             console.error('Parse Error:', e);
             return null;
         }
     } catch (error) {
-        createToast(`Lỗi kết nối: ${error.message}`);
-        console.error('API Error:', error);
+        createToast(`Lỗi kết nối OpenAI: ${error.message}`);
+        console.error('OpenAI API Error:', error);
+        return null;
+    }
+}
+
+async function processWithGemini(contents) {
+    if (!isEnabled || contents.length === 0 || !shouldProcessPage()) return null;
+
+    try {
+        if (!chrome.runtime?.id) {
+            throw new Error('Extension context không khả dụng');
+        }
+
+        const response = await chrome.storage.sync.get(['replacementRate']);
+        if (chrome.runtime.lastError) {
+            throw new Error('Lỗi khi lấy cài đặt: ' + chrome.runtime.lastError.message);
+        }
+
+        if (!currentApiKey) {
+            createToast('Gemini API key không được cung cấp. Vui lòng nhập API key trong phần cài đặt.');
+            return null;
+        }
+
+        const combinedText = contents.map(item => item.text).join('\n---\n');
+
+        const prompt = isEnglishPage ?
+            `Analyze the following English text and:
+            1. Identify important words/phrases to replace with Vietnamese (about ${response.replacementRate || 20}% of words)
+            2. Return JSON with format:
+            {
+                "replacements": [
+                    {
+                        "english": "english word",
+                        "vietnamese": "từ tiếng việt",
+                        "meaning": "english meaning"
+                    }
+                ]
+            }` :
+            `Hãy phân tích các đoạn văn bản tiếng Việt sau và thực hiện:
+            1. Xác định các từ/cụm từ quan trọng có thể thay thế bằng tiếng Anh (khoảng ${response.replacementRate || 20}% số từ)
+            2. Trả về JSON với format:
+            {
+                "replacements": [
+                    {
+                        "vietnamese": "từ tiếng việt",
+                        "english": "từ tiếng anh",
+                        "meaning": "nghĩa tiếng việt"
+                    }
+                ]
+            }`;
+
+        const apiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${currentApiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                system_instruction: {
+                    parts: [
+                        {
+                            text: "You are a language learning assistant. Always return valid JSON with the following format ONLY: {\"replacements\": [{\"vietnamese\": \"text\", \"english\": \"text\", \"meaning\": \"text\"}]}"
+                        }
+                    ]
+                },
+                contents: [
+                    {
+                        parts: [
+                            {
+                                text: `${prompt}\n\nText: ${combinedText}`
+                            }
+                        ]
+                    }
+                ]
+            })
+        });
+
+        if (!apiResponse.ok) {
+            const errorData = await apiResponse.json();
+            createToast(`Lỗi Gemini API: ${errorData.error?.message || 'Unknown error'}`);
+            return null;
+        }
+
+        const data = await apiResponse.json();
+        
+        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+            createToast('Gemini API trả về dữ liệu không hợp lệ');
+            return null;
+        }
+
+        try {
+            const cleanedResponse = cleanAPIResponse(data.candidates[0].content.parts[0].text);
+            console.log('Original Gemini API Response:', data.candidates[0].content.parts[0].text);
+            console.log('Cleaned Gemini API Response:', cleanedResponse);
+
+            const parsedData = JSON.parse(cleanedResponse);
+            validateAPIResponse(parsedData);
+            return parsedData;
+        } catch (e) {
+            createToast(`Lỗi xử lý dữ liệu Gemini: ${e.message}`);
+            console.error('Original Gemini API Response:', data.candidates[0].content.parts[0].text);
+            console.error('Parse Error:', e);
+            return null;
+        }
+    } catch (error) {
+        createToast(`Lỗi kết nối Gemini: ${error.message}`);
+        console.error('Gemini API Error:', error);
         return null;
     }
 }
@@ -478,11 +570,25 @@ async function initializeExtension() {
             return;
         }
         
-        chrome.storage.sync.get(['isEnabled', 'blacklist', 'pageLanguage'], function(result) {
+        chrome.storage.sync.get([
+            'isEnabled', 
+            'blacklist', 
+            'pageLanguage',
+            'apiProvider',
+            'openaiKey',
+            'geminiKey',
+            'openaiModel',
+            'geminiModel'
+        ], function(result) {
             if (chrome.runtime.lastError) {
                 console.error('Error loading settings:', chrome.runtime.lastError);
                 return;
             }
+            
+            // Xác định provider và key tương ứng
+            const provider = result.apiProvider;
+            const apiKey = provider === 'openai' ? result.openaiKey : result.geminiKey;
+            const model = provider === 'openai' ? result.openaiModel : result.geminiModel;
             
             // Cập nhật cấu hình
             updateConfig({
@@ -490,10 +596,24 @@ async function initializeExtension() {
                 blacklist: result.blacklist ? result.blacklist.split('\n')
                     .map(domain => domain.trim().toLowerCase())
                     .filter(domain => domain) : [],
-                pageLanguage: result.pageLanguage || 'both'
+                pageLanguage: result.pageLanguage || 'both',
+                apiProvider: provider,
+                apiKey: apiKey,
+                model: model
             });
+
+            // Kiểm tra điều kiện trước khi xử lý trang
+            if (!provider) {
+                createToast('Vui lòng chọn API provider (OpenAI hoặc Gemini) trong phần cài đặt');
+                return;
+            }
+
+            if (!apiKey) {
+                createToast(`Vui lòng nhập API key cho ${provider} trong phần cài đặt`);
+                return;
+            }
             
-            // Kiểm tra và xử lý trang nếu cần
+            // Chỉ xử lý trang khi đã có đủ thông tin cần thiết
             if (isEnabled && !isBlacklisted() && !hasProcessedPage && shouldProcessPage()) {
                 processPage();
             }
@@ -504,12 +624,34 @@ async function initializeExtension() {
 }
 
 async function processPage() {
-    if (!isEnabled || isProcessing || hasProcessedPage || !shouldProcessPage()) return;
+    if (!isEnabled || isProcessing || !shouldProcessPage()) return;
     
     try {
         if (!chrome.runtime?.id) {
             throw new Error('Extension context không khả dụng');
         }
+
+        // Lấy cài đặt mới nhất từ storage
+        const settings = await new Promise((resolve) => {
+            chrome.storage.sync.get([
+                'apiProvider',
+                'openaiKey',
+                'geminiKey',
+                'openaiModel',
+                'geminiModel'
+            ], resolve);
+        });
+
+        // Cập nhật cấu hình với thông tin mới nhất
+        const provider = settings.apiProvider;
+        const apiKey = provider === 'openai' ? settings.openaiKey : settings.geminiKey;
+        const model = provider === 'openai' ? settings.openaiModel : settings.geminiModel;
+        
+        updateConfig({
+            apiProvider: provider,
+            apiKey: apiKey,
+            model: model
+        });
 
         if (isBlacklisted()) {
             console.log('Trang web này nằm trong blacklist');
@@ -520,6 +662,12 @@ async function processPage() {
         if (!shouldProcessPage()) {
             console.log('Trang web này không phù hợp với cài đặt ngôn ngữ');
             createToast('Trang web này không phù hợp với cài đặt ngôn ngữ đã chọn', 'info');
+            return;
+        }
+
+        // Kiểm tra API provider đã được chọn chưa
+        if (!currentApiProvider) {
+            createToast('Vui lòng chọn API provider (OpenAI hoặc Gemini) trong phần cài đặt');
             return;
         }
         
@@ -533,13 +681,31 @@ async function processPage() {
             return;
         }
 
-        const result = await processWithOpenAI(contents);
+        let result;
+        // Chỉ gọi API tương ứng với provider được chọn
+        if (currentApiProvider === 'openai') {
+            if (!currentApiKey) {
+                createToast('OpenAI API key không được cung cấp. Vui lòng nhập API key trong phần cài đặt.');
+                return;
+            }
+            result = await processWithOpenAI(contents);
+        } else if (currentApiProvider === 'gemini') {
+            if (!currentApiKey) {
+                createToast('Gemini API key không được cung cấp. Vui lòng nhập API key trong phần cài đặt.');
+                return;
+            }
+            result = await processWithGemini(contents);
+        } else {
+            createToast('API provider không hợp lệ');
+            return;
+        }
+
         if (result && result.replacements) {
             contents.forEach(({element}) => {
                 applyReplacements(element, result.replacements);
             });
             setHasProcessedPage(true);
-            createToast(`Đã xử lý thành công trang ${isEnglishPage ? 'tiếng Anh' : 'tiếng Việt'}!`, 'success');
+            createToast(`Đã xử lý thành công trang ${isEnglishPage ? 'tiếng Anh' : 'tiếng Việt'} với ${currentApiProvider}!`, 'success');
         }
     } catch (error) {
         console.error('Process Page Error:', error);
@@ -566,35 +732,6 @@ async function initialize() {
         // Khởi tạo extension và lắng nghe messages
         await initializeExtension();
 
-        // Tạo nút refresh
-        const { button, updateButtonText } = createRefreshButton();
-        
-        if (!isBlacklisted()) {
-            button.style.display = 'block';
-        }
-
-        button.addEventListener('click', async () => {
-            try {
-                if (!chrome.runtime?.id) {
-                    throw new Error('Extension context không khả dụng');
-                }
-                if (isEnabled && !isProcessing && !isBlacklisted() && shouldProcessPage()) {
-                    setHasProcessedPage(false);
-                    await processPage();
-                } else if (!shouldProcessPage()) {
-                    createToast('Trang web này không phù hợp với cài đặt ngôn ngữ đã chọn', 'info');
-                }
-            } catch (error) {
-                console.error('Button Click Error:', error);
-                createToast('Lỗi: ' + error.message);
-                if (error.message.includes('Extension context không khả dụng')) {
-                    setTimeout(initializeExtension, 1000);
-                }
-            }
-        });
-
-        document.body.appendChild(button);
-
         // Lắng nghe messages từ popup
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             try {
@@ -611,7 +748,10 @@ async function initialize() {
                     updateConfig({
                         isEnabled: message.isEnabled,
                         blacklist: message.blacklist,
-                        pageLanguage: message.pageLanguage
+                        pageLanguage: message.pageLanguage,
+                        apiProvider: message.apiProvider,
+                        apiKey: message.apiKey,
+                        model: message.model
                     });
                     
                     // Reset các trạng thái
@@ -619,6 +759,30 @@ async function initialize() {
                     isProcessing = false;
                     
                     // Kiểm tra và xử lý lại trang nếu cần
+                    if (isEnabled && !isBlacklisted() && shouldProcessPage()) {
+                        processPage();
+                    }
+                    
+                    sendResponse({success: true});
+                } else if (message.type === 'refreshWords') {
+                    // Xóa tất cả replacements hiện tại
+                    removeAllReplacements();
+                    
+                    // Cập nhật cấu hình mới
+                    updateConfig({
+                        isEnabled: message.isEnabled,
+                        blacklist: message.blacklist,
+                        pageLanguage: message.pageLanguage,
+                        apiProvider: message.apiProvider,
+                        apiKey: message.apiKey,
+                        model: message.model
+                    });
+                    
+                    // Reset các trạng thái
+                    hasProcessedPage = false;
+                    isProcessing = false;
+                    
+                    // Xử lý lại trang
                     if (isEnabled && !isBlacklisted() && shouldProcessPage()) {
                         processPage();
                     }
